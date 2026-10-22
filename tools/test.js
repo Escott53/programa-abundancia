@@ -44,11 +44,17 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   // open today's session via home
   await p.goto(URL0 + '#/'); await p.click('.today-task'); await p.waitForSelector('#addq');
   await p.click('#addq'); await p.fill('#qt', '¿Qué significa para ti la abundancia?'); await p.click('#ok');
-  await p.evaluate(() => localStorage.setItem('pa-openai-key', 'sk-test'));
-  await p.setInputFiles('#file', { name: 'sesion.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('fake') });
-  await p.waitForSelector('.chk'); await p.click('#ok');
-  ok((await p.$$('[data-id]')).length === 3, '3 questions after audio'); ok(calls.length === 2, 'openai mocked x2');
-  ok((await p.inputValue('#title')) === 'Gratitud que multiplica', 'title from audio');
+  for (const q of ['¿Por qué tres cosas estás agradecido hoy?', 'Escribe una acción concreta.']) { await p.click('#addq'); await p.fill('#qt', q); await p.click('#ok'); }
+  await p.fill('#title', 'Gratitud que multiplica');
+  ok((await p.$$('[data-id]')).length === 3, '3 questions');
+  ok(!(await p.$('#audio')) && !(await p.$('text=Sacar preguntas')), 'no "Sacar preguntas" button');
+  // añadir vídeo en la sesión
+  await p.click('#addvs'); await p.fill('#vu', 'https://youtu.be/dQw4w9WgXcQ'); await p.fill('#vt', 'Vídeo de la sesión'); await p.click('#ok');
+  await p.waitForSelector('.vinl .player iframe'); ok(true, 'session video inline');
+  await p.fill('.vinl [data-vf="note"]', 'Nota del vídeo de sesión'); await p.waitForTimeout(500);
+  await p.click('.vinl [data-a="vwt"]'); await p.waitForSelector('.vinl [data-a="vwt"]:has-text("Visto")');
+  ok(await p.evaluate(() => { const v = JSON.parse(localStorage.getItem('pa-data')).videos[0]; return v.week === 3 && v.o != null && v.watched && v.note.includes('sesión'); }), 'session video saved (week, session, watched, note)');
+  await clean(); if (OUT) await p.screenshot({ path: OUT + 'anadir-video.png' });
   const tas = await p.$$('[data-a="ans"]');
   await tas[0].fill('Libertad para elegir y tiempo con mi familia.');
   await p.click('[data-id]:nth-child(1) [data-a="mic"]'); await p.waitForTimeout(200);
@@ -82,6 +88,7 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   // videos
   await p.goto(URL0 + '#/semana/3'); await p.click('#addv');
   await p.fill('#vu', 'https://youtu.be/dQw4w9WgXcQ'); await p.fill('#vt', 'Sesión 3: la gratitud'); await p.click('#ok');
+  await p.waitForSelector('.vid >> text=Sesión 3: la gratitud'); ok(true, 'week video listed in week'); await p.click('.vid >> text=Sesión 3: la gratitud');
   await p.waitForSelector('.player iframe');
   ok((await p.getAttribute('.player iframe', 'src')).includes('youtube-nocookie.com/embed/dQw4w9WgXcQ'), 'youtube embedded');
   await p.click('#watched'); await p.fill('#note', 'Repasar el minuto 12.');
@@ -92,12 +99,11 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   await p.selectOption('#sheet-root #vw', ''); await p.click('#ok'); await p.waitForSelector('#pl video');
   ok(true, 'local video plays from IndexedDB');
   const dbn = await p.evaluate(async () => (await indexedDB.databases()).map((x) => x.name)); ok(dbn.every((n) => n.startsWith('pa-')), 'IDB namespaced ' + dbn);
-  await p.click('#fromvid'); await p.waitForSelector('.chk'); await p.click('#ok');
-  ok((await p.$$('[data-id]')).length === 2 && calls.length === 4, 'questions from local video');
+  ok(!(await p.$('#fromvid')), 'no fromvid button'); ok(calls.length === 0, 'no OpenAI calls');
   await p.goto(URL0 + '#/videos'); await p.waitForSelector('.vid');
   await p.goto(URL0 + '#/'); await p.goto(URL0 + '#/videos'); await p.waitForSelector('.vid'); await p.waitForTimeout(200);
-  ok((await p.$$('.vid')).length === 2, '2 videos listed');
-  await p.click('[data-f="3"]'); ok((await p.$$('.vid')).length === 1, 'filter by week');
+  ok((await p.$$('.vid')).length === 3, '3 videos listed');
+  await p.click('[data-f="3"]'); ok((await p.$$('.vid')).length === 2, 'filter by week');
   await p.click('[data-f="all"]'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'videos.png' });
   // week + home screenshots
   await p.goto(URL0 + '#/semana/3'); await p.waitForSelector('.vid'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'semana.png' });
@@ -113,9 +119,8 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   await p.goto(URL0 + '#/ajustes');
   const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#ej')]);
   const json = require('fs').readFileSync(await dl.path(), 'utf8'); const J = JSON.parse(json);
-  ok(J.data.follow.length === 2 && J.data.videos.length === 2 && /no se incluyen/.test(J.aviso), 'export json');
-  ok(!json.includes('sk-test'), 'key not in export');
-  const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('#em')]);
+  ok(J.data.follow.length === 2 && J.data.videos.length === 3 && /no se incluyen/.test(J.aviso), 'export json');
+    const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('#em')]);
   const md = require('fs').readFileSync(await dl2.path(), 'utf8'); ok(md.includes('## Seguimiento') && md.includes('youtu.be'), 'export markdown');
   await p.evaluate(() => localStorage.removeItem('pa-data')); await p.reload();
   await p.click('#go'); await p.goto(URL0 + '#/ajustes');

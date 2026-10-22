@@ -1,5 +1,5 @@
 /* Service worker: red primero (siempre la última versión), caché si no hay conexión. */
-const CACHE = 'pa-cache-v1';
+const CACHE = 'pa-cache-v2';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './lock.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())); });

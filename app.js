@@ -76,10 +76,11 @@
 
   // ---------- Router ----------
   const tabs = [['#/', '🌱', 'Inicio', ['']], ['#/semanas', '📅', 'Semanas', ['semanas', 'semana', 'sesion', 'releer']], ['#/videos', '🎬', 'Vídeos', ['videos', 'video']], ['#/seguimiento', '📌', 'Seguimiento', ['seguimiento']], ['#/ajustes', '⚙️', 'Ajustes', ['ajustes']]];
-  let objURL = null;
+  let objURL = null, objURLs = [];
   function route() {
     stopDictation(); closeSheet(); const A = $('#app'); A.oninput = A.onchange = A.onclick = null;
     if (objURL) { URL.revokeObjectURL(objURL); objURL = null; }
+    objURLs.forEach((u) => URL.revokeObjectURL(u)); objURLs = [];
     document.body.classList.toggle('big', !!settings.big);
     const h = location.hash || '#/'; const [, name = '', a1, a2] = h.split('/');
     if (!data) return viewSetup();
@@ -158,7 +159,7 @@
       <details class="card"><summary>🗓️ Días con actividad ${w.days ? '(personalizado)' : '(patrón general)'}</summary>
         <div class="days7" style="margin-top:10px">${WD.map((d) => `<label><input type="checkbox" data-wd="${d}" ${set.includes(d) ? 'checked' : ''}>${WDL[d]}</label>`).join('')}</div>
         ${w.days ? '<button class="btn sm block" id="resetdays" style="margin-top:8px">Usar el patrón general</button>' : ''}</details>
-      <div class="row" style="margin-top:16px"><h2 class="grow" style="margin:0">Vídeos</h2><button class="btn sm" id="addv">＋ Añadir vídeo</button></div>
+      <h2 style="margin-top:16px">Vídeos</h2><button class="btn block pri addvid" id="addv" style="margin-bottom:10px">🎬 Añadir vídeo</button>
       ${vids.length ? `<div class="card" style="padding:4px 12px">${vids.map(vidRow).join('')}</div>` : '<p class="muted small">Sin vídeos en esta semana.</p>'}
       <div class="card"><h3>Notas de la semana</h3><textarea id="note" placeholder="Ideas, aprendizajes, intenciones…">${esc(w.note)}</textarea>
         <div class="qtools"><button class="btn sm" data-a="mic">🎤 Dictar</button><button class="btn sm" data-a="fu">📌 Seguimiento</button><span class="saved"></span></div></div>
@@ -174,7 +175,7 @@
     };
     $('#app').querySelectorAll('[data-wd]').forEach((cb) => (cb.onchange = () => { w.days = [...$('#app').querySelectorAll('[data-wd]:checked')].map((x) => +x.dataset.wd); saveData(); viewWeek(n); $('details.card').open = true; }));
     if ($('#resetdays')) $('#resetdays').onclick = () => { w.days = null; saveData(); viewWeek(n); };
-    $('#addv').onclick = () => addVideo(n);
+    $('#addv').onclick = () => addVideo(n, null, () => viewWeek(n));
   }
 
   let tmr;
@@ -204,6 +205,7 @@
   function entryBind(e, opt) {
     autosave((ta) => {
       if (ta.id === 'note') e.note = ta.value; else if (ta.id === 'title') e.title = ta.value;
+      else if (ta.dataset.vf) { const v = data.videos.find((x) => x.id === ta.closest('[data-vid]').dataset.vid); if (v) v[ta.dataset.vf] = ta.value; }
       else { const c = ta.closest('[data-id]'); const q = c && e.questions.find((x) => x.id === c.dataset.id); if (q) q.a = ta.value; }
     }, opt.after);
     autoGrow();
@@ -227,13 +229,19 @@
   function viewSession(n, o) {
     const e = sesObj(n, o), fus = data.follow.filter((f) => f.src?.w === n && f.src?.o === o);
     const rer = () => viewSession(n, o);
+    const sv = data.videos.filter((v) => v.week === n && v.o === o);
     $('#app').innerHTML = `<div class="top"><a class="btn sm ghost" href="#/semana/${n}" aria-label="Volver">‹</a><h1>Semana ${n}</h1></div>
       <div class="muted small" style="margin-bottom:8px">${esc(fmtDate(dateOf(n, o)))} · <span class="pill ${status(e)}" id="stp">${ST[status(e)]}</span></div>
       <input type="text" id="title" placeholder="Título de la sesión (opcional)" value="${esc(e.title)}" style="font-family:var(--serif);font-size:1.1em">
-      ${entryHtml(e, { audio: true, noteTitle: 'Notas de la sesión' })}
+      <button class="btn block pri addvid" id="addvs" style="margin:12px 0">🎬 Añadir vídeo</button>
+      ${sv.length ? `<div id="svids">${sv.map(vidInline).join('')}</div>` : ''}
+      ${entryHtml(e, { noteTitle: 'Notas de la sesión' })}
       ${fus.length ? `<h2>Seguimiento</h2>${fus.map(fuCard).join('')}` : ''}
       <button class="btn block ${e.done ? '' : 'pri'}" id="done">${e.done ? '✓ Sesión hecha · desmarcar' : '✓ Marcar sesión como hecha'}</button>`;
-    entryBind(e, { src: { w: n, o, label: sesLabel(n, o) }, rerender: rer, after: () => { const s = status(e), p = $('#stp'); if (p) { p.className = 'pill ' + s; p.textContent = ST[s]; } } });
+    entryBind(e, { src: { w: n, o, label: sesLabel(n, o) }, rerender: rer, after: () => { const s = status(e), p = $('#stp'); if (p) { p.className = 'pill ' + s; p.textContent = ST[s]; } },
+      click: (b) => { const v = data.videos.find((x) => x.id === b.closest('[data-vid]')?.dataset.vid); if (v && b.dataset.a === 'vwt') { v.watched = !v.watched; saveData(); rer(); } } });
+    $('#addvs').onclick = () => addVideo(n, o, rer);
+    loadInline(sv);
     $('#done').onclick = () => { e.done = !e.done; saveData(); if (e.done) toast('Sesión hecha. ¡Bien! 🌱'); rer(); };
   }
   function autoGrow() { document.querySelectorAll('#app textarea').forEach((t) => { const f = () => { t.style.height = 'auto'; t.style.height = Math.max(120, t.scrollHeight + 4) + 'px'; }; t.addEventListener('input', f); f(); }); }
@@ -260,6 +268,26 @@
   const vIcon = (v) => (v.kind === 'file' ? '📱' : { youtube: '▶️', vimeo: '🎞️', drive: '📁', direct: '🎬', link: '🔗' }[parseUrl(v.url).type]);
   const vidRow = (v) => `<a class="vid" href="#/video/${v.id}" style="padding:10px 0;border-bottom:1px solid var(--line)"><span class="ic">${vIcon(v)}</span><span class="grow"><b>${esc(v.title || 'Vídeo sin título')}</b><br><span class="small muted">${v.week ? 'Semana ' + v.week : 'General'}${v.kind === 'file' ? ' · ' + mb(v.size) : ''}${v.questions?.length ? ' · ' + v.questions.length + ' preg.' : ''}</span></span><span class="pill ${v.watched ? 'completed' : ''}">${v.watched ? 'Visto' : 'Sin ver'}</span></a>`;
 
+  function playerOf(v, plId) {
+    const p = v.kind === 'url' ? parseUrl(v.url) : { type: 'file' };
+    return p.embed ? `<div class="player"><iframe src="${esc(p.embed)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="${esc(v.title)}"></iframe></div>`
+      : p.type === 'direct' ? `<div class="player"><video controls playsinline preload="metadata" src="${esc(v.url)}"></video></div>`
+      : p.type === 'file' ? `<div class="player" id="${plId}"><p class="muted" style="padding:20px">Cargando vídeo…</p></div>`
+      : `<a class="btn sm block" href="${esc(v.url)}" target="_blank" rel="noopener">↗️ Abrir enlace</a>`;
+  }
+  const vidInline = (v) => `<div class="card vinl" data-vid="${v.id}">${playerOf(v, 'pl-' + v.id)}
+      <input type="text" data-vf="title" placeholder="Título del vídeo" value="${esc(v.title)}" style="margin-top:8px">
+      <textarea data-vf="note" placeholder="Notas del vídeo…" style="margin-top:8px">${esc(v.note || '')}</textarea>
+      <div class="qtools"><button class="btn sm ${v.watched ? '' : 'pri'}" data-a="vwt">${v.watched ? '✓ Visto' : 'Marcar visto'}</button><a class="btn sm ghost" href="#/video/${v.id}">Abrir ›</a><span class="saved"></span></div></div>`;
+  function loadInline(list) {
+    const h = location.hash;
+    list.filter((v) => v.kind === 'file').forEach((v) => getBlob(v.id).then((b) => {
+      const pl = document.getElementById('pl-' + v.id); if (!pl || location.hash !== h) return;
+      if (!b) { pl.innerHTML = '<p class="muted" style="padding:20px">El archivo no está en este móvil.</p>'; return; }
+      const u = URL.createObjectURL(b); objURLs.push(u); pl.innerHTML = `<video controls playsinline preload="metadata" src="${u}"></video>`;
+    }).catch(() => {}));
+  }
+
   function viewVideos() {
     let f = viewVideos.f || 'all';
     const draw = () => {
@@ -280,8 +308,8 @@
     el.textContent = `Espacio usado en el móvil: ${mb(e.usage || 0)} de ${mb(e.quota || 0)} disponibles${p ? ' · almacenamiento persistente ✓' : ''}.`;
   }
 
-  function addVideo(week) {
-    const el = sheet(`<h2>Añadir vídeo</h2>
+  function addVideo(week, ses, done) {
+    const el = sheet(`<h2>🎬 Añadir vídeo</h2>${ses != null ? `<p class="small muted">Se añade a esta sesión (${esc(sesLabel(week, ses))}).</p>` : ''}
       <div class="filters"><button class="btn sm pri" data-k="url">🔗 Enlace</button><button class="btn sm" data-k="file">📱 Archivo del móvil</button></div>
       <div id="kurl"><label class="f" for="vu">Enlace (YouTube, Vimeo, Drive o cualquier web)</label><input type="text" id="vu" inputmode="url" placeholder="https://…"></div>
       <div id="kfile" hidden><input type="file" id="vf" accept="video/*,audio/*"><p class="small muted" id="vfi">El vídeo se guarda solo en este móvil (IndexedDB). Ocupa espacio y no se incluye en la copia JSON.</p></div>
@@ -299,7 +327,7 @@
     $('#cn', el).onclick = closeSheet;
     $('#ok', el).onclick = async () => {
       const wk = parseInt($('#vw', el).value, 10) || null, title = $('#vt', el).value.trim();
-      const v = { ...blankE(), id: uid(), week: wk, title, kind, url: '', size: 0, mime: '', name: '', watched: false, added: Date.now() };
+      const v = { ...blankE(), id: uid(), week: wk, o: ses != null && wk === week ? ses : null, title, kind, url: '', size: 0, mime: '', name: '', watched: false, added: Date.now() };
       delete v.done;
       if (kind === 'url') { let u = $('#vu', el).value.trim(); if (!u) return toast('Pega el enlace'); if (!/^https?:\/\//i.test(u)) u = 'https://' + u; v.url = u; if (!v.title) v.title = u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60); }
       else {
@@ -309,7 +337,7 @@
         await persist();
         try { await putBlob(v.id, f); } catch (e) { $('#ok', el).disabled = false; $('#ok', el).textContent = 'Guardar'; return toast('No se pudo guardar: falta espacio en el móvil', 4000); }
       }
-      data.videos.push(v); saveData(); closeSheet(); toast('Vídeo añadido'); location.hash = '#/video/' + v.id;
+      data.videos.push(v); saveData(); closeSheet(); toast('Vídeo añadido'); if (done) done(); else location.hash = '#/video/' + v.id;
     };
   }
 
@@ -327,8 +355,7 @@
       <input type="text" id="title" placeholder="Título" value="${esc(v.title)}" style="font-family:var(--serif);font-size:1.1em;margin-top:10px">
       <div class="row" style="margin-top:8px"><select id="vw" class="grow"><option value="">General</option>${Array.from({ length: T() }, (_, i) => `<option value="${i + 1}" ${i + 1 === v.week ? 'selected' : ''}>Semana ${i + 1}</option>`).join('')}</select>
         <button class="btn ${v.watched ? '' : 'pri'}" id="watched">${v.watched ? '✓ Visto' : 'Marcar visto'}</button></div>
-      ${v.kind === 'file' && v.size <= 25 * 1048576 ? '<button class="btn block" id="fromvid" style="margin-top:10px">🎧 Sacar preguntas de este vídeo</button>' : ''}
-      ${entryHtml(v, { audio: true, noteTitle: 'Notas del vídeo' })}
+      ${entryHtml(v, { noteTitle: 'Notas del vídeo' })}
       <button class="btn block danger ghost" id="delv">🗑 Borrar vídeo</button>`;
     entryBind(v, { src: { v: id, w: v.week, label: 'Vídeo: ' + (v.title || '').slice(0, 40) }, rerender: rer });
     $('#vw').onchange = (e) => { v.week = parseInt(e.target.value, 10) || null; saveData(); toast('Semana cambiada'); };
@@ -546,7 +573,7 @@
 
   // ---------- Ajustes ----------
   function viewSettings() {
-    const k = apiKey(), nFiles = data.videos.filter((v) => v.kind === 'file').length;
+    const nFiles = data.videos.filter((v) => v.kind === 'file').length;
     $('#app').innerHTML = `<h1>Ajustes</h1>
       <div class="card"><h3>Programa</h3><label class="f" for="st">Fecha de inicio (semana 1)</label><input type="date" id="st" value="${esc(data.start)}">
         <label class="f" for="nw">Número de semanas</label><input type="text" inputmode="numeric" id="nw" value="${T()}">
@@ -555,11 +582,6 @@
         <div class="days7">${WD.map((d) => `<label><input type="checkbox" data-pd="${d}" ${data.pattern.includes(d) ? 'checked' : ''}>${WDL[d]}</label>`).join('')}</div>
         <p class="small muted">Cada semana puede cambiarlo en «Días con actividad».</p></div>
       <div class="card"><h3>Lectura</h3><label class="switch"><span>Letra grande</span><input type="checkbox" id="big" ${settings.big ? 'checked' : ''}></label></div>
-      <div class="card"><h3>🔑 Clave de OpenAI</h3><p class="small muted">Solo para «Sacar preguntas del audio/vídeo» (archivos de hasta 25 MB). Se guarda únicamente en este móvil y solo se envía a OpenAI.</p>
-        <input type="password" id="key" placeholder="sk-…" value="${k ? '••••••••' + esc(k.slice(-4)) : ''}" autocomplete="off">
-        <div class="row" style="margin-top:8px"><button class="btn grow pri" id="sk">Guardar clave</button>${k ? '<button class="btn danger" id="dk">Borrar</button>' : ''}</div>
-        <details style="margin-top:10px"><summary class="small">Modelos</summary><label class="f">Transcripción</label><select id="tm">${['gpt-4o-mini-transcribe', 'gpt-4o-transcribe', 'whisper-1'].map((m) => `<option ${m === settings.transcribeModel ? 'selected' : ''}>${m}</option>`).join('')}</select>
-        <label class="f">Extraer preguntas</label><input type="text" id="cm" value="${esc(settings.chatModel)}"></details></div>
       <div class="card"><h3>🔒 Bloqueo</h3><p class="small muted">Pide huella o PIN al abrir la app.</p><button class="btn block" id="lk">${PALock.isEnabled() ? 'Desactivar bloqueo' : 'Activar huella / PIN'}</button></div>
       <div class="card"><h3>🎬 Almacenamiento de vídeos</h3><p class="small muted" id="stor">${nFiles} vídeo${nFiles === 1 ? '' : 's'} guardado${nFiles === 1 ? '' : 's'} en el móvil.</p>
         <button class="btn block" id="pers">Proteger almacenamiento (persistente)</button></div>
@@ -575,10 +597,6 @@
     $('#nw').onchange = (e) => { const v = parseInt(e.target.value, 10); if (!(v >= 1 && v <= 104)) { toast('Entre 1 y 104 semanas'); return viewSettings(); } data.weeks = v; saveData(); toast('Ahora son ' + v + ' semanas'); viewSettings(); };
     $('#app').querySelectorAll('[data-pd]').forEach((cb) => (cb.onchange = () => { data.pattern = [...$('#app').querySelectorAll('[data-pd]:checked')].map((x) => +x.dataset.pd); saveData(); toast('Patrón guardado'); }));
     $('#big').onchange = (e) => { settings.big = e.target.checked; saveSet(); document.body.classList.toggle('big', settings.big); };
-    $('#tm').onchange = (e) => { settings.transcribeModel = e.target.value; saveSet(); };
-    $('#cm').onchange = (e) => { settings.chatModel = e.target.value.trim() || 'gpt-5-mini'; saveSet(); };
-    $('#sk').onclick = () => { const v = $('#key').value.trim(); if (v.startsWith('••')) return toast('La clave ya está guardada'); if (!/^sk-/.test(v)) return toast('La clave empieza por «sk-»'); localStorage.setItem(K.key, v); toast('Clave guardada en este móvil'); viewSettings(); };
-    if ($('#dk')) $('#dk').onclick = () => { localStorage.removeItem(K.key); toast('Clave borrada'); viewSettings(); };
     $('#lk').onclick = () => { PALock.openSettings((m) => { toast(m); viewSettings(); }); };
     $('#pers').onclick = async () => toast((await persist()) ? 'Almacenamiento protegido ✓' : 'El navegador no lo ha concedido (instala la app en la pantalla de inicio)', 3500);
     $('#ej').onclick = () => { download(`programa-abundancia-${isoToday()}.json`, JSON.stringify({ app: 'programa-abundancia', exported: new Date().toISOString(), aviso: 'Los vídeos subidos desde el móvil no se incluyen en esta copia.', data, settings: { big: settings.big } }, null, 2), 'application/json'); if (nFiles) toast('Copia descargada. Recuerda: los vídeos del móvil no van incluidos.', 4000); };
