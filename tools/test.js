@@ -7,12 +7,7 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   const errs = []; const p = await ctx.newPage();
   p.on('pageerror', (e) => errs.push('PAGEERROR ' + e.message));
   p.on('console', (m) => { if (m.type() === 'error') errs.push('CONSOLE ' + m.text()); });
-  const calls = [];
-  await ctx.route('https://api.openai.com/**', async (r) => {
-    const u = r.request().url(); calls.push(u);
-    if (u.includes('transcriptions')) return r.fulfill({ json: { text: 'Esta semana trabajamos la gratitud. ¿Por qué tres cosas estás agradecido hoy? Escribe una acción concreta para recibir más.' } });
-    return r.fulfill({ json: { choices: [{ message: { content: JSON.stringify({ titulo: 'Gratitud que multiplica', preguntas: ['¿Por qué tres cosas estás agradecido hoy?', 'Escribe una acción concreta para recibir más.'] }) } }] } });
-  });
+  p.on('dialog', (d) => d.accept());
   await ctx.route(/youtube-nocookie\.com|vimeo\.com|drive\.google\.com/, (r) => r.fulfill({ contentType: 'text/html', body: '<body style="background:#000;color:#fff;display:grid;place-items:center;height:100vh;margin:0;font:20px sans-serif">▶ vídeo</body>' }));
   await p.addInitScript(() => {
     class SR { start() { setTimeout(() => this.onresult && this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: 'esto lo he dictado' }], { isFinal: true })] }), 50); } stop() {} }
@@ -20,113 +15,70 @@ const OUT = process.env.SHOTS === '0' ? null : '/workspace/app-abundancia/screen
   });
   const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) process.exitCode = 1; };
   const clean = () => p.evaluate(() => { document.getElementById('toast-root').innerHTML = ''; scrollTo(0, 0); });
-  await p.goto(URL0);
-  // start so today is in week 3; pattern = every day so "today" always has a session
-  const d = new Date(Date.now() - 16 * 864e5).toLocaleDateString('sv-SE');
-  await p.fill('#st', d); await p.click('#go');
-  ok((await p.textContent('.num')).includes('Semana 3 de 17'), 'home Semana 3 de 17');
+  const D = () => p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')));
+  // ---- migración desde v1 ----
+  await p.goto(URL0 + 'manifest.json');
+  await p.evaluate(() => localStorage.setItem('pa-data', JSON.stringify({ v: 1, start: '2026-10-05', weeks: 17, pattern: [1, 2, 3, 4, 5],
+    w: { 1: { title: 'Abrirse a recibir', theme: 'Gratitud', note: 'Nota semanal', days: null, s: { 2: { title: 'Sesión gratitud', note: 'Me siento bien', done: true, transcript: '', questions: [{ id: 'q1', q: '¿Qué agradeces?', a: 'Mi familia' }] }, 3: { title: '', note: '', questions: [], done: false } } } },
+    videos: [{ id: 'v1', week: 1, o: 2, kind: 'url', url: 'https://youtu.be/dQw4w9WgXcQ', title: 'Vídeo 1', note: 'nota vídeo', questions: [], watched: true, added: 1 }, { id: 'v2', week: null, o: null, kind: 'url', url: 'https://example.com', title: 'General', questions: [{ id: 'q9', q: 'P vídeo', a: 'R vídeo' }], added: Date.parse('2026-10-20') }],
+    follow: [{ id: 'f1', text: 'Llamar a Marta', kind: 'acción', due: '2026-10-10', status: 'curso', created: '2026-10-07', src: { w: 1, o: 2, label: 'x' }, log: [{ d: '2026-10-08', t: 'Escrito' }] }] })));
+  await p.goto(URL0); await p.waitForSelector('#new');
+  let d = await D();
+  ok(d.v === 2 && d.entries.length === 3 && d.legacy && d.legacy.v === 1, 'migrated to 3 entries, legacy kept');
+  const ses = d.entries.find((e) => e.title === 'Sesión gratitud');
+  ok(ses && ses.date === '2026-10-07' && ses.questions[0].a === 'Mi familia' && ses.items[0].id === 'v1' && ses.items[0].watched && ses.note.includes('Llamar a Marta') && ses.note.includes('Escrito'), 'session → entry with video, Q&A, follow-up');
+  ok(d.entries.some((e) => e.title.startsWith('Semana 1 — Abrirse') && e.note.includes('Gratitud') && e.note.includes('Nota semanal')), 'week notes → entry');
+  ok(d.entries.some((e) => e.date === '2026-10-20' && e.questions[0].a === 'R vídeo'), 'general video → dated entry');
+  // ---- nueva entrada ----
+  await p.click('#new'); await p.fill('#nd', '2026-10-28'); await p.fill('#nt', 'Clase en directo: merecimiento'); await p.click('[data-ty="directo"]'); await p.click('#ok');
+  await p.waitForSelector('#note');
+  await p.fill('#note', 'Muy buena clase.'); await p.click('.card:has(#note) [data-a="mic"]'); await p.waitForTimeout(200); await p.click('.card:has(#note) [data-a="mic"]'); await p.waitForTimeout(600);
+  d = await D(); let e = d.entries.find((x) => x.title.startsWith('Clase'));
+  ok(e.type === 'directo' && e.date === '2026-10-28' && e.note.endsWith('Esto lo he dictado'), 'entry created + comment dictation autosaved');
+  await p.click('#addq'); await p.fill('#qt', '¿Qué me impide recibir?'); await p.click('#ok');
+  await p.fill('[data-a="ans"]', 'El miedo.'); await p.waitForTimeout(600);
+  await p.click('#addv'); await p.click('[data-k="url"]'); await p.fill('#vu', 'https://youtu.be/dQw4w9WgXcQ'); await p.fill('#vt', 'Grabación de la clase'); await p.click('#ok');
+  await p.waitForSelector('.item .player iframe');
+  await p.click('#addd'); await p.setInputFiles('#vf', [{ name: 'Guia.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF') }, { name: 'foto.png', mimeType: 'image/png', buffer: require('fs').readFileSync(__dirname + '/../icons/icon-192.png') }]);
+  await p.click('#ok'); await p.waitForSelector('.pv img');
+  await p.click('#addd'); await p.click('[data-k="url"]'); await p.fill('#vu', 'docs.google.com/document/d/abc'); await p.fill('#vt', 'Documento compartido'); await p.click('#ok');
+  d = await D(); e = d.entries.find((x) => x.title.startsWith('Clase'));
+  ok(e.questions[0].a === 'El miedo.' && e.items.length === 4 && e.items.filter((i) => i.kind === 'doc').length === 3, 'Q&A + video + 2 files + link saved');
+  ok(await p.evaluate(async (id) => new Promise((r) => { const q = indexedDB.open('pa-videos', 1); q.onsuccess = () => { const g = q.result.transaction('blobs').objectStore('blobs').get(id); g.onsuccess = () => r(!!g.result); }; }), e.items[1].id), 'file in IndexedDB pa-videos');
+  await p.fill('#title', 'Clase en directo: merecimiento'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'entrada.png', fullPage: true });
+  await p.goto(URL0 + '#/'); await p.waitForSelector('.entry');
+  ok((await p.$$eval('.entry .et', (x) => x.map((y) => y.textContent)))[0].startsWith('Clase'), 'diary newest first');
+  await clean(); if (OUT) await p.screenshot({ path: OUT + 'diario.png' });
+  // ---- archivos ----
+  await p.goto(URL0 + '#/archivos'); await p.waitForSelector('#fl .vid');
+  ok((await p.$$('#fl .vid')).length === 6, 'repository lists 6 items');
+  await p.click('[data-f="doc"]'); ok((await p.$$('#fl .vid')).length === 3, 'filter documentos');
+  await p.fill('#fq', 'guia'); ok((await p.$$('#fl .vid')).length === 1, 'search in repository');
+  await p.fill('#fq', ''); await p.click('[data-f="all"]'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'archivos.png' });
+  await p.click('#fl .vid:has-text("Guia")'); await p.waitForSelector('.item.flash'); ok(true, 'repository links to entry');
+  // ---- buscar ----
+  await p.goto(URL0 + '#/buscar'); await p.fill('#s', 'marta'); ok((await p.$$('#res .hit')).length === 1, 'search finds migrated follow-up');
+  await p.fill('#s', 'miedo'); ok((await p.$$('#res .hit')).length === 1, 'search finds answer');
+  // ---- compartir (share target) ----
+  await p.goto(URL0); await p.waitForFunction(async () => !!(await navigator.serviceWorker.getRegistration()) && !!navigator.serviceWorker.controller, null, { timeout: 10000 }).catch(() => {});
+  if (!(await p.evaluate(() => !!navigator.serviceWorker.controller))) { await p.reload(); await p.waitForTimeout(500); }
+  await p.evaluate(async () => { const fd = new FormData(); fd.append('title', ''); fd.append('text', 'Mensaje del grupo: mañana directo a las 19h'); fd.append('files', new File(['hola'], 'audio-whatsapp.opus', { type: 'audio/ogg' })); const r = await fetch('share', { method: 'POST', body: fd }); return r.url; });
+  await p.goto(URL0 + '#/compartido'); await p.waitForSelector('#snew');
+  await p.click('#sadd'); await p.waitForSelector('#note');
+  d = await D(); e = d.entries.find((x) => x.title.startsWith('Clase'));
+  ok(e.note.includes('mañana directo') && e.items.some((i) => i.name === 'audio-whatsapp.opus'), 'share target POST → existing entry');
+  await p.waitForSelector('.pv audio'); ok(true, 'shared audio playable');
+  // ---- ajustes / copias ----
   await p.goto(URL0 + '#/ajustes');
-  for (const wd of [0, 6]) await p.check(`[data-pd="${wd}"]`);
-  await p.fill('#nw', '18'); await p.press('#nw', 'Tab'); await p.waitForTimeout(100);
-  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')).weeks === 18), 'weeks editable');
-  await p.fill('#nw', '17'); await p.press('#nw', 'Tab');
-  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')).pattern.length === 7), 'pattern saved');
-  await p.goto(URL0 + '#/'); await p.waitForSelector('.today-task');
-  ok(true, 'today task shown');
-  // week view
-  await p.goto(URL0 + '#/semana/3'); await p.waitForSelector('#theme');
-  await p.fill('#title', 'Abrirse a recibir'); await p.fill('#theme', 'Gratitud');
-  ok((await p.$$('.weekgrid a')).length === 7, '7 sessions (pattern)');
-  await p.click('details.card summary'); await p.uncheck('[data-wd="6"]'); await p.waitForTimeout(100);
-  await p.uncheck('[data-wd="0"]'); await p.waitForTimeout(100);
-  ok((await p.$$('.weekgrid a')).length === 5, 'per-week override 5 sessions');
-  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')).w[3].theme === 'Gratitud'), 'week theme autosaved');
-  // open today's session via home
-  await p.goto(URL0 + '#/'); await p.click('.today-task'); await p.waitForSelector('#addq');
-  await p.click('#addq'); await p.fill('#qt', '¿Qué significa para ti la abundancia?'); await p.click('#ok');
-  for (const q of ['¿Por qué tres cosas estás agradecido hoy?', 'Escribe una acción concreta.']) { await p.click('#addq'); await p.fill('#qt', q); await p.click('#ok'); }
-  await p.fill('#title', 'Gratitud que multiplica');
-  ok((await p.$$('[data-id]')).length === 3, '3 questions');
-  ok(!(await p.$('#audio')) && !(await p.$('text=Sacar preguntas')), 'no "Sacar preguntas" button');
-  // añadir vídeo en la sesión
-  await p.click('#addvs'); await p.fill('#vu', 'https://youtu.be/dQw4w9WgXcQ'); await p.fill('#vt', 'Vídeo de la sesión'); await p.click('#ok');
-  await p.waitForSelector('.vinl .player iframe'); ok(true, 'session video inline');
-  await p.fill('.vinl [data-vf="note"]', 'Nota del vídeo de sesión'); await p.waitForTimeout(500);
-  await p.click('.vinl [data-a="vwt"]'); await p.waitForSelector('.vinl [data-a="vwt"]:has-text("Visto")');
-  ok(await p.evaluate(() => { const v = JSON.parse(localStorage.getItem('pa-data')).videos[0]; return v.week === 3 && v.o != null && v.watched && v.note.includes('sesión'); }), 'session video saved (week, session, watched, note)');
-  await clean(); if (OUT) await p.screenshot({ path: OUT + 'anadir-video.png' });
-  const tas = await p.$$('[data-a="ans"]');
-  await tas[0].fill('Libertad para elegir y tiempo con mi familia.');
-  await p.click('[data-id]:nth-child(1) [data-a="mic"]'); await p.waitForTimeout(200);
-  ok((await tas[0].inputValue()).endsWith('Esto lo he dictado'), 'dictation appends');
-  await p.click('[data-id]:nth-child(1) [data-a="mic"]');
-  await tas[2].fill('Llamar a Marta para proponer el proyecto. Ahorrar el 10% de cada ingreso.');
-  await p.fill('#note', 'Me siento con energía y confianza.'); await p.waitForTimeout(600);
-  // follow-up from answer 3
-  await p.click('[data-id]:nth-child(3) [data-a="fu"]');
-  ok((await p.inputValue('#ft')).startsWith('Llamar a Marta'), 'follow-up prefilled from note');
-  const past = new Date(Date.now() - 2 * 864e5).toLocaleDateString('sv-SE');
-  await p.fill('#fd', past); await p.click('#ok');
-  await p.click('[data-a="fu"] >> nth=-1'); await p.click('[data-k="compromiso"]'); await p.fill('#ft', 'Meditar 10 minutos cada mañana');
-  await p.fill('#fd', new Date(Date.now() + 10 * 864e5).toLocaleDateString('sv-SE')); await p.click('#ok');
-  ok((await p.$$('[data-fu]')).length === 2, 'follow-ups shown in session');
-  await p.click('#done');
-  await clean(); if (OUT) await p.screenshot({ path: OUT + 'sesion.png' });
-  const D = await p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')));
-  const sk = Object.keys(D.w[3].s)[0];
-  ok(D.w[3].s[sk].done && D.w[3].s[sk].questions[0].a.includes('dictado'), 'session saved');
-  // seguimiento
-  await p.goto(URL0 + '#/seguimiento'); await p.waitForSelector('.fu');
-  ok((await p.$$('.fu.overdue')).length === 1, 'overdue highlighted');
-  await p.click('.fu.overdue'); await p.fill('#lt', 'Le escribí por WhatsApp, quedamos el lunes.'); await p.click('#ladd');
-  ok((await p.$$('.log')).length === 1, 'progress log added');
-  await p.click('#ok');
-  ok((await p.textContent('.fu')).includes('1 avance'), 'log count');
-  await p.click('[data-f="over"]'); ok((await p.$$('.fu')).length === 1, 'filter vencidos');
-  await p.click('[data-f="curso"]'); ok((await p.$$('.fu')).length === 1, 'status en curso after log');
-  await p.click('[data-f="open"]'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'seguimiento.png' });
-  // videos
-  await p.goto(URL0 + '#/semana/3'); await p.click('#addv');
-  await p.fill('#vu', 'https://youtu.be/dQw4w9WgXcQ'); await p.fill('#vt', 'Sesión 3: la gratitud'); await p.click('#ok');
-  await p.waitForSelector('.vid >> text=Sesión 3: la gratitud'); ok(true, 'week video listed in week'); await p.click('.vid >> text=Sesión 3: la gratitud');
-  await p.waitForSelector('.player iframe');
-  ok((await p.getAttribute('.player iframe', 'src')).includes('youtube-nocookie.com/embed/dQw4w9WgXcQ'), 'youtube embedded');
-  await p.click('#watched'); await p.fill('#note', 'Repasar el minuto 12.');
-  await p.waitForTimeout(500);
-  await p.goto(URL0 + '#/videos'); await p.click('#addv'); await p.click('[data-k="file"]');
-  await p.setInputFiles('#vf', { name: 'meditacion.mp4', mimeType: 'video/mp4', buffer: Buffer.alloc(300000, 1) });
-  await p.waitForTimeout(150); ok((await p.textContent('#vfi')).includes('MB'), 'file size shown');
-  await p.selectOption('#sheet-root #vw', ''); await p.click('#ok'); await p.waitForSelector('#pl video');
-  ok(true, 'local video plays from IndexedDB');
-  const dbn = await p.evaluate(async () => (await indexedDB.databases()).map((x) => x.name)); ok(dbn.every((n) => n.startsWith('pa-')), 'IDB namespaced ' + dbn);
-  ok(!(await p.$('#fromvid')), 'no fromvid button'); ok(calls.length === 0, 'no OpenAI calls');
-  await p.goto(URL0 + '#/videos'); await p.waitForSelector('.vid');
-  await p.goto(URL0 + '#/'); await p.goto(URL0 + '#/videos'); await p.waitForSelector('.vid'); await p.waitForTimeout(200);
-  ok((await p.$$('.vid')).length === 3, '3 videos listed');
-  await p.click('[data-f="3"]'); ok((await p.$$('.vid')).length === 2, 'filter by week');
-  await p.click('[data-f="all"]'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'videos.png' });
-  // week + home screenshots
-  await p.goto(URL0 + '#/semana/3'); await p.waitForSelector('.vid'); await clean(); if (OUT) await p.screenshot({ path: OUT + 'semana.png' });
-  await p.goto(URL0 + '#/'); await p.waitForSelector('#fustats');
-  ok((await p.textContent('#fustats')).replace(/\s/g, '').startsWith('2seguimientos'), 'home pending follow-ups count');
-  await clean(); if (OUT) await p.screenshot({ path: OUT + 'inicio.png' });
-  // releer & search
-  await p.goto(URL0 + '#/releer/3'); ok((await p.textContent('.read')).includes('Marta') && (await p.textContent('.read')).includes('Repasar'), 'releer week');
-  await p.goto(URL0 + '#/buscar'); await p.fill('#s', 'gratitud');
-  const nm = (await p.$$('mark')).length; ok(nm >= 3, 'search across (' + nm + ' marks)');
-  await p.fill('#s', 'whatsapp'); ok((await p.$$('.hit')).length === 1, 'search follow-up log');
-  // export / import
+  const [dz] = await Promise.all([p.waitForEvent('download'), p.click('#ez')]); const zp = await dz.path();
+  const zbuf = require('fs').readFileSync(zp); ok(zbuf.includes(Buffer.from('datos.json')) && zbuf.includes(Buffer.from('Guia.pdf')), 'zip export with files');
+  const [dj] = await Promise.all([p.waitForEvent('download'), p.click('#ej')]); const json = require('fs').readFileSync(await dj.path(), 'utf8'); ok(JSON.parse(json).data.entries.length === 4, 'json export');
+  const [dm] = await Promise.all([p.waitForEvent('download'), p.click('#em')]); ok(require('fs').readFileSync(await dm.path(), 'utf8').includes('El miedo.'), 'markdown export');
+  await p.click('#rs'); await p.waitForSelector('#new'); ok((await D()).entries.length === 0, 'reset');
+  await p.goto(URL0 + '#/ajustes'); await p.setInputFiles('#if', { name: 'copia.zip', mimeType: 'application/zip', buffer: zbuf }); await p.waitForTimeout(800);
+  ok((await D()).entries.length === 4, 'zip import entries');
+  await p.goto(URL0 + '#/archivos'); await p.click('#fl .vid:has-text("foto")'); await p.waitForSelector('.pv img'); ok(true, 'zip import restores files');
   await p.goto(URL0 + '#/ajustes');
-  const [dl] = await Promise.all([p.waitForEvent('download'), p.click('#ej')]);
-  const json = require('fs').readFileSync(await dl.path(), 'utf8'); const J = JSON.parse(json);
-  ok(J.data.follow.length === 2 && J.data.videos.length === 3 && /no se incluyen/.test(J.aviso), 'export json');
-    const [dl2] = await Promise.all([p.waitForEvent('download'), p.click('#em')]);
-  const md = require('fs').readFileSync(await dl2.path(), 'utf8'); ok(md.includes('## Seguimiento') && md.includes('youtu.be'), 'export markdown');
-  await p.evaluate(() => localStorage.removeItem('pa-data')); await p.reload();
-  await p.click('#go'); await p.goto(URL0 + '#/ajustes');
-  p.once('dialog', (x) => x.accept());
-  await p.setInputFiles('#if', { name: 'b.json', mimeType: 'application/json', buffer: Buffer.from(json) }); await p.waitForTimeout(300);
-  ok(await p.evaluate(() => JSON.parse(localStorage.getItem('pa-data')).w[3].theme === 'Gratitud'), 'import json');
   const keys = await p.evaluate(() => Object.keys(localStorage)); ok(keys.every((k) => k.startsWith('pa-')), 'storage keys namespaced: ' + keys);
   await p.click('#lk'); await p.fill('#mtl-p1', '1234'); await p.click('[data-a="next"]'); await p.fill('#mtl-p2', '1234'); await p.click('[data-a="next"]');
   await p.waitForTimeout(1500); ok(await p.evaluate(() => !!localStorage.getItem('pa-lock-config')), 'lock pa-lock-config');

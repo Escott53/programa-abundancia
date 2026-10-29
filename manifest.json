@@ -1,7 +1,7 @@
 {
   "name": "Programa de Abundancia",
   "short_name": "Abundancia",
-  "description": "Programa semanal de abundancia: sesiones, vídeos, notas y seguimiento",
+  "description": "Diario del curso de abundancia: entradas por día, comentarios, preguntas, vídeos y documentos",
   "lang": "es-ES",
   "dir": "ltr",
   "id": "./",
@@ -11,10 +11,57 @@
   "orientation": "portrait",
   "background_color": "#0c2219",
   "theme_color": "#0c2219",
-  "categories": ["lifestyle", "education", "productivity"],
+  "categories": [
+    "lifestyle",
+    "education",
+    "productivity"
+  ],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
-  ]
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "*/*",
+            "image/*",
+            "video/*",
+            "audio/*",
+            "application/pdf",
+            ".pdf",
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".txt"
+          ]
+        }
+      ]
+    }
+  }
 }

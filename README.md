@@ -1,4 +1,4 @@
 # Programa de Abundancia
 
-PWA personal (es-ES) para un programa semanal (17 semanas por defecto): sesiones con preguntas y notas (dictado), vídeos (enlaces o archivos del móvil en IndexedDB), seguimiento de acciones/compromisos, búsqueda, releer, exportar/importar.
+PWA personal (es-ES): diario del curso por días (título, tipo, comentarios, preguntas y respuestas con dictado, vídeos y documentos en IndexedDB), repositorio de archivos, búsqueda, copia JSON/ZIP/Markdown y destino de «Compartir» de Android (WhatsApp).
 Datos solo en el dispositivo; claves `pa-*`. https://escott53.github.io/programa-abundancia/
