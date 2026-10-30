@@ -1,7 +1,7 @@
 /* Service worker: red primero (siempre la última versión), caché si no hay conexión.
    Además recibe lo compartido desde otras apps (share_target POST ./share). */
-const CACHE = 'pa-cache-v3';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './lock.js', './manifest.json',
+const CACHE = 'pa-cache-v4';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './lock.js', './tts.js', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => {

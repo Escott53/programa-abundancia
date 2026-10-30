@@ -84,7 +84,7 @@
   const tabs = [['#/', '📖', 'Diario', ['', 'e']], ['#/archivos', '🗂️', 'Archivos', ['archivos']], ['#/buscar', '🔎', 'Buscar', ['buscar']], ['#/ajustes', '⚙️', 'Ajustes', ['ajustes']]];
   let objURLs = [];
   function route() {
-    stopDictation(); closeSheet(); const A = $('#app'); A.oninput = A.onchange = A.onclick = null;
+    stopDictation(); closeSheet(); if (window.PATTS) PATTS.stop(); const A = $('#app'); A.oninput = A.onchange = A.onclick = null;
     objURLs.forEach((u) => URL.revokeObjectURL(u)); objURLs = [];
     document.body.classList.toggle('big', !!settings.big);
     const [, name = '', a1, a2] = (location.hash || '#/').split('/');
@@ -160,7 +160,7 @@
       ${media}
       <textarea data-if="note" placeholder="Notas…" style="margin-top:8px;min-height:70px">${esc(it.note || '')}</textarea>
       <div class="qtools"><span class="row">${it.kind === 'video' ? `<button class="btn sm ${it.watched ? '' : 'pri'}" data-a="wt">${it.watched ? '✓ Visto' : 'Marcar visto'}</button>` : ''}
-        ${it.src === 'file' ? '<button class="btn sm" data-a="open">↗️ Abrir</button><button class="btn sm" data-a="share">📤 Compartir</button>' : ''}</span><span class="saved"></span>
+        ${it.src === 'file' ? '<button class="btn sm" data-a="open">↗️ Abrir</button><button class="btn sm" data-a="share">📤 Compartir</button>' : ''}</span><button class="btn sm" data-a="sayit" aria-label="Escuchar">🔊 Escuchar</button><span class="saved"></span>
         <button class="btn sm ghost danger" data-a="del" aria-label="Borrar">🗑</button></div></div>`;
   }
   async function blobOf(it) { const b = await getBlob(it.id); if (!b) return null; return b.type || !it.mime ? b : new Blob([b], { type: it.mime }); }
@@ -190,7 +190,7 @@
   const qHtml = (q, i, n) => `<div class="card" data-id="${q.id}">
       <div class="q"><span class="n">${i + 1}.</span><span class="grow">${esc(q.q)}</span><button class="btn sm ghost" data-a="edit" aria-label="Editar pregunta">✏️</button></div>
       <textarea data-a="ans" placeholder="Respuesta…" aria-label="Respuesta a la pregunta ${i + 1}">${esc(q.a)}</textarea>
-      <div class="qtools"><button class="btn sm" data-a="mic">🎤 Dictar</button><span class="saved"></span>
+      <div class="qtools"><span class="row"><button class="btn sm" data-a="mic">🎤 Dictar</button><button class="btn sm" data-a="sayq" aria-label="Escuchar pregunta y respuesta">🔊</button></span><span class="saved"></span>
       <span class="row"><button class="btn sm ghost" data-a="up" ${i === 0 ? 'disabled' : ''} aria-label="Subir">▲</button><button class="btn sm ghost" data-a="down" ${i === n - 1 ? 'disabled' : ''} aria-label="Bajar">▼</button></span></div></div>`;
 
   function viewEntry(id, focusItem) {
@@ -198,13 +198,14 @@
     const rer = () => { const y = scrollY; viewEntry(id); scrollTo(0, y); };
     const vids = e.items.filter((i) => i.kind === 'video'), docs = e.items.filter((i) => i.kind !== 'video');
     $('#app').innerHTML = `<div class="top"><a class="btn sm ghost" href="#/" aria-label="Volver">‹</a><h1>Entrada</h1></div>
+      <button class="btn block pri say-all" data-a="sayall">🔊 Escuchar toda la entrada</button>
       <div class="card">
         <label class="f" for="edate">Día</label><input type="date" id="edate" value="${esc(e.date)}">
         <label class="f" for="title">Título</label><input type="text" id="title" placeholder="Título" value="${esc(e.title)}" style="font-family:var(--serif);font-size:1.1em">
         <label class="f">Tipo</label>${typeChips(e.type)}<span class="saved"></span></div>
       <div class="card"><h3>💭 Comentarios</h3><textarea id="note" placeholder="Lo que quieras anotar…">${esc(e.note)}</textarea>
-        <div class="qtools"><button class="btn sm" data-a="mic">🎤 Dictar</button><span class="saved"></span></div></div>
-      <h2 style="margin-top:18px">❓ Preguntas y respuestas</h2>
+        <div class="qtools"><span class="row"><button class="btn sm" data-a="mic">🎤 Dictar</button><button class="btn sm" data-a="saynote">🔊 Escuchar</button></span><span class="saved"></span></div></div>
+      <div class="row" style="margin-top:18px"><h2 class="grow" style="margin:0">❓ Preguntas y respuestas</h2>${e.questions.length ? '<button class="btn sm" data-a="sayqs">🔊 Escuchar</button>' : ''}</div>
       <div id="qs">${e.questions.map((q, i) => qHtml(q, i, e.questions.length)).join('')}</div>
       <button class="btn block" id="addq">＋ Añadir pregunta</button>
       <h2 style="margin-top:18px">🎬 Vídeos</h2>${vids.map(itemHtml).join('')}
@@ -223,6 +224,7 @@
       const b = ev.target.closest('button[data-a]'); if (!b) return;
       const a = b.dataset.a, card = b.closest('[data-id]'), idx = card ? e.questions.findIndex((x) => x.id === card.dataset.id) : -1;
       const it = e.items.find((x) => x.id === b.closest('[data-item]')?.dataset.item);
+      if (a.startsWith('say')) return sayEntry(e, a, card && e.questions[idx], it);
       if (a === 'mic') return toggleDictation(b, b.closest('.card').querySelector('textarea'));
       if (a === 'up' || a === 'down') { const j = idx + (a === 'up' ? -1 : 1); [e.questions[idx], e.questions[j]] = [e.questions[j], e.questions[idx]]; saveData(); return rer(); }
       if (a === 'edit') return editQuestion(e, e.questions[idx], rer);
@@ -241,6 +243,36 @@
     };
     loadPreviews(e.items);
     if (focusItem) setTimeout(() => { const el = document.getElementById('it-' + focusItem); if (el) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); } }, 50);
+  }
+
+  // ---------- Escuchar (lectura en voz alta) ----------
+  const qText = (q, i) => `Pregunta ${i + 1}. ${q.q}. Respuesta: ${(q.a || '').trim() || 'sin responder'}.`;
+  async function itemText(it) {
+    const parts = [(it.kind === 'video' ? 'Vídeo: ' : 'Documento: ') + (it.title || it.name || 'sin título') + '.'];
+    if ((it.note || '').trim()) parts.push('Notas: ' + it.note.trim());
+    if (it.src === 'file' && it.kind !== 'video') {
+      if (!PATTS.canRead(it.name, it.mime)) {
+        if (!/^(image|audio|video)\//.test(it.mime || '')) toast('Este formato no se puede leer en voz alta (sí: texto, Markdown, HTML, PDF y Word .docx). Se leen el título y las notas.', 5000);
+      } else {
+        const b = await blobOf(it); if (!b) toast('El archivo no está en este móvil; se leen el título y las notas.', 4000);
+        else { const slow = /pdf|docx/.test(PATTS.kindOf(it.name, it.mime)); if (slow) toast('Preparando lectura del documento…', 20000); try { const t = (await PATTS.extract(b, it.name, it.mime)).trim(); if (slow) $('#toast-root').innerHTML = ''; if (t) parts.push(t); else toast('El documento no tiene texto legible.', 4000); } catch (err) { toast(/red|Failed|fetch/i.test(String(err && err.message)) ? 'Para leer PDF o Word hace falta conexión la primera vez.' : (err && err.message) || 'No se pudo leer el documento', 5000); } }
+      }
+    }
+    return parts;
+  }
+  async function sayEntry(e, a, q, it) {
+    if (!window.PATTS || !PATTS.supported) return toast('Este navegador no puede leer en voz alta. Usa Chrome en Android.', 4000);
+    const head = [`${e.title || 'Entrada sin título'}. ${fmtDate(e.date)}.`];
+    const note = (e.note || '').trim() ? ['Comentarios. ' + e.note.trim()] : [];
+    const qs = e.questions.length ? ['Preguntas y respuestas.', ...e.questions.map(qText)] : [];
+    if (a === 'saynote') return note.length ? PATTS.play(note, '💭 Comentarios') : toast('No hay comentarios escritos');
+    if (a === 'sayqs') return PATTS.play(qs, '❓ Preguntas y respuestas');
+    if (a === 'sayq') return PATTS.play([qText(q, e.questions.indexOf(q))], '❓ Pregunta ' + (e.questions.indexOf(q) + 1));
+    if (a === 'sayit') { const h = location.hash, t = await itemText(it); if (location.hash !== h) return; return PATTS.play(t, '📎 ' + (it.title || it.name || 'Documento')); }
+    const h = location.hash, items = [];
+    for (const x of e.items) items.push(...(await itemText(x)));
+    if (location.hash !== h) return;
+    PATTS.play([...head, ...note, ...qs, ...items], '📖 ' + (e.title || fmtDate(e.date)));
   }
 
   function editQuestion(e, q, rer) {
@@ -451,7 +483,7 @@
         <button class="btn block" id="em" style="margin-top:8px">📤 Exportar como texto (Markdown)</button></div>
       <div class="card small muted"><h3 style="color:var(--text)">📥 Desde WhatsApp</h3>Con la app instalada en la pantalla de inicio, en WhatsApp mantén pulsado un mensaje o archivo → Compartir → «Abundancia».</div>
       <div class="card"><button class="btn block danger ghost" id="rs">Borrar todos los datos</button></div>
-      <p class="small muted" style="text-align:center">Programa de Abundancia · v3 · datos solo en este dispositivo</p>`;
+      <p class="small muted" style="text-align:center">Programa de Abundancia · v4 · datos solo en este dispositivo</p>`;
     estimate().then((e) => { if (e && $('#stor')) $('#stor').textContent += ` Espacio usado: ${mb(e.usage || 0)} de ${mb(e.quota || 0)}.`; });
     $('#big').onchange = (e) => { settings.big = e.target.checked; saveSet(); document.body.classList.toggle('big', settings.big); };
     $('#lk').onclick = () => { PALock.openSettings((m) => { toast(m); viewSettings(); }); };

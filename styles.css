@@ -104,3 +104,12 @@ label.f { display: block; margin: 12px 0 4px; font-weight: 600; font-size: .9em;
 .ell { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item.flash { outline: 2px solid var(--accent); }
 .card > .saved { display: block; text-align: right; }
+/* Lectura en voz alta */
+#tts-bar { position: fixed; left: 8px; right: 8px; bottom: calc(64px + var(--safe-b)); z-index: 11; background: #133528; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+#tts-bar[hidden] { display: none; }
+#tts-bar .tts-info { display: flex; gap: 6px; align-items: baseline; margin-bottom: 6px; min-width: 0; }
+#tts-bar .tts-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+#tts-bar .tts-ctl { display: flex; gap: 6px; justify-content: space-between; }
+#tts-bar .tts-ctl .btn { flex: 1; }
+body.tts-on #app { padding-bottom: 210px; }
+.say-all { margin-bottom: 10px; }
